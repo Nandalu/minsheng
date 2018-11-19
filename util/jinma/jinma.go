@@ -44,11 +44,6 @@ type Msg struct {
 	CustomID string
 }
 
-type MsgsByAppUserResp struct {
-	Msgs             []Msg
-	LastEvaluatedKey string
-}
-
 type MeResp struct {
 	User User
 	App  App
@@ -119,6 +114,11 @@ func MsgUpdate(id, token string, body []byte, skf64 *float64) (*Msg, error) {
 	return &resp, nil
 }
 
+type MsgsByAppUserResp struct {
+	Msgs             []Msg
+	LastEvaluatedKey string
+}
+
 func MsgsByAppUser(appID, token string, partition int, esk string) (*MsgsByAppUserResp, error) {
 	vals := url.Values{
 		"AppID": {appID},
@@ -130,6 +130,41 @@ func MsgsByAppUser(appID, token string, partition int, esk string) (*MsgsByAppUs
 	}
 	urlStr := host + "/MsgsByAppUser?" + vals.Encode()
 	resp := MsgsByAppUserResp{}
+	httpResp, respBody, err := util.JSONReq3("GET", urlStr, &resp)
+	if err != nil {
+		return nil, errors.Wrap(err, "util.JSONReq3")
+	}
+	if httpResp.StatusCode != 200 {
+		return nil, fmt.Errorf("request error: %d %s", httpResp.StatusCode, respBody)
+	}
+	return &resp, nil
+}
+
+type Rect struct {
+	CLat float64
+	CLng float64
+	SLat float64
+	SLng float64
+}
+
+type MsgsByGeoAppUserResp struct {
+	Msgs []Msg
+}
+
+func MsgsByGeoAppUser(app, user string, rect Rect, sortKey *float64) (*MsgsByGeoAppUserResp, error) {
+	vals := url.Values{
+		"AppID":  {app},
+		"UserID": {user},
+		"CLat":   {strconv.FormatFloat(rect.CLat, 'f', -1, 64)},
+		"CLng":   {strconv.FormatFloat(rect.CLng, 'f', -1, 64)},
+		"SLat":   {strconv.FormatFloat(rect.SLat, 'f', -1, 64)},
+		"SLng":   {strconv.FormatFloat(rect.SLng, 'f', -1, 64)},
+	}
+	if sortKey != nil {
+		vals.Set("SKF64", strconv.FormatFloat(*sortKey, 'f', -1, 64))
+	}
+	urlStr := host + "/MsgsByGeoAppUser?" + vals.Encode()
+	resp := MsgsByGeoAppUserResp{}
 	httpResp, respBody, err := util.JSONReq3("GET", urlStr, &resp)
 	if err != nil {
 		return nil, errors.Wrap(err, "util.JSONReq3")
