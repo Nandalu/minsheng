@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/Nandalu/minsheng/util/jinma"
 	"github.com/pkg/errors"
+	"html/template"
 	"log"
 	"math"
 	"net/http"
@@ -42,6 +43,12 @@ func jsonError(s *Server, path string, fn func(*Server, http.ResponseWriter, *ht
 			b, _ := json.Marshal(&je)
 			http.Error(w, string(b), http.StatusBadRequest)
 		}
+	})
+}
+
+func httpHandleFunc(s *Server, path string, fn func(*Server, http.ResponseWriter, *http.Request)) {
+	http.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		fn(s, w, r)
 	})
 }
 
@@ -84,6 +91,38 @@ func Pollution(s *Server, w http.ResponseWriter, r *http.Request) *appError {
 	return nil
 }
 
+var pollutionUITmpl = template.Must(template.ParseFiles("tmpl/PollutionUI.html"))
+
+func PollutionUI(s *Server, w http.ResponseWriter, r *http.Request) {
+	rect, err := getFormRect(r)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("%+v", err), http.StatusBadRequest)
+		return
+	}
+	rect.SLat = 0.06
+	rect.SLng = 0.35
+
+	resp, err := jinma.MsgsByGeoAppUser(s.App, s.User, *rect, nil)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("%+v", err), http.StatusBadRequest)
+		return
+	}
+
+	sort.Slice(resp.Msgs, func(i, j int) bool {
+		iDist := math.Pow(resp.Msgs[i].Lat-rect.CLat, 2) + math.Pow(resp.Msgs[i].Lng-rect.CLng, 2)
+		jDist := math.Pow(resp.Msgs[j].Lat-rect.CLat, 2) + math.Pow(resp.Msgs[j].Lng-rect.CLng, 2)
+		return iDist < jDist
+	})
+
+	page := struct {
+		Msgs []jinma.Msg
+	}{}
+	page.Msgs = resp.Msgs
+	if err := pollutionUITmpl.Execute(w, page); err != nil {
+		log.Printf("%+v", err)
+	}
+}
+
 func Root(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Hello 民生物联网"))
 }
@@ -93,7 +132,9 @@ func main() {
 		App:  "16Qao77TJqiey",
 		User: "12NPDF4sASbe4",
 	}
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 	jsonError(server, "/Pollution", Pollution)
+	httpHandleFunc(server, "/PollutionUI", PollutionUI)
 	http.HandleFunc("/", Root)
 
 	port := 8080

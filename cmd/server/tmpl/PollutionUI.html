@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <script type="text/javascript">
+      var page = {{.}};
+    </script>
+
+    <style>
+    </style>
+  </head>
+  <body>
+    <div id="container">
+    </div>
+
+    <script type="text/javascript">
+var msg = page["Msgs"][0];
+var body = JSON.parse(msg["Body"]);
+
+var asset = document.createElement("img");
+if (body.AQI > 100) {
+  asset.src = "/static/redlight.png";
+} else {
+  asset.src = "/static/greenlight.png";
+}
+var container = document.querySelector("#container");
+container.appendChild(asset);
+    </script>
+  </body>
+</html>
