@@ -4,18 +4,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Nandalu/minsheng/util/jinma"
+	"github.com/davecheney/gpio"
 	"github.com/pkg/errors"
 	"html/template"
 	"log"
 	"math"
 	"net/http"
+	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 )
 
 type Server struct {
-	App  string
-	User string
+	App      string
+	User     string
+	GreenPin gpio.Pin
+	RedPin   gpio.Pin
 }
 
 type appError struct {
@@ -68,6 +73,10 @@ func getFormRect(r *http.Request) (*jinma.Rect, error) {
 	return rect, nil
 }
 
+type Reading struct {
+	AQI int
+}
+
 func Pollution(s *Server, w http.ResponseWriter, r *http.Request) *appError {
 	rect, err := getFormRect(r)
 	if err != nil {
@@ -86,6 +95,19 @@ func Pollution(s *Server, w http.ResponseWriter, r *http.Request) *appError {
 		jDist := math.Pow(resp.Msgs[j].Lat-rect.CLat, 2) + math.Pow(resp.Msgs[j].Lng-rect.CLng, 2)
 		return iDist < jDist
 	})
+
+	reading := Reading{}
+	if err := json.Unmarshal([]byte(resp.Msgs[0].Body), &reading); err != nil {
+		return &appError{Message: fmt.Sprintf("%+v", err)}
+	}
+	log.Printf("rect %+v, reading %+v", rect, reading)
+	if reading.AQI > 70 {
+		s.GreenPin.Clear()
+		s.RedPin.Set()
+	} else {
+		s.RedPin.Clear()
+		s.GreenPin.Set()
+	}
 
 	json.NewEncoder(w).Encode(resp)
 	return nil
@@ -136,6 +158,30 @@ func main() {
 	jsonError(server, "/Pollution", Pollution)
 	httpHandleFunc(server, "/PollutionUI", PollutionUI)
 	http.HandleFunc("/", Root)
+
+	greenPin, err := gpio.OpenPin(10, gpio.ModeOutput)
+	if err != nil {
+		log.Fatalf("%+v", err)
+	}
+	server.GreenPin = greenPin
+	redPin, err := gpio.OpenPin(11, gpio.ModeOutput)
+	if err != nil {
+		log.Fatalf("%+v", err)
+	}
+	server.RedPin = redPin
+	// turn the led off on exit
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		for _ = range c {
+			fmt.Printf("\nClearing and unexporting the pin.\n")
+			greenPin.Clear()
+			greenPin.Close()
+			redPin.Clear()
+			redPin.Close()
+			os.Exit(0)
+		}
+	}()
 
 	port := 8080
 	log.Printf("listening at %d", port)
